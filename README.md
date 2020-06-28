@@ -1,3 +1,4 @@
 # CAPSTONE PROJECT - THIRD EYE FOR VISUALLY IMPAIRED
 
-## Work in Progress...
+## WORK CLOSED.
+Starting new project from scratch.

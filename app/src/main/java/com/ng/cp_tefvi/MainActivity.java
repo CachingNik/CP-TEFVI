@@ -25,18 +25,16 @@ import android.util.Log;
 import android.util.Size;
 import android.widget.Toast;
 
-import com.google.android.gms.tasks.OnFailureListener;
-import com.google.android.gms.tasks.OnSuccessListener;
 import com.google.common.util.concurrent.ListenableFuture;
+import com.google.mlkit.common.model.LocalModel;
 import com.google.mlkit.vision.common.InputImage;
 import com.google.mlkit.vision.objects.DetectedObject;
 import com.google.mlkit.vision.objects.ObjectDetection;
 import com.google.mlkit.vision.objects.ObjectDetector;
-import com.google.mlkit.vision.objects.defaults.ObjectDetectorOptions;
+import com.google.mlkit.vision.objects.custom.CustomObjectDetectorOptions;
 
 import java.io.ByteArrayOutputStream;
 import java.nio.ByteBuffer;
-import java.util.List;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executors;
 
@@ -71,40 +69,44 @@ public class MainActivity extends AppCompatActivity {
 
     }
 
-    private class OD implements ImageAnalysis.Analyzer {
+    private class COD implements ImageAnalysis.Analyzer {
 
-        ObjectDetectorOptions options =
-                new ObjectDetectorOptions.Builder()
-                        .setDetectorMode(ObjectDetectorOptions.STREAM_MODE)
-                        .enableClassification()
+        LocalModel localModel =
+                new LocalModel.Builder()
+                        .setAssetFilePath("mobilenet_v1_1.0_224_quantized_1_metadata_1.tflite")
                         .build();
-        ObjectDetector objectDetector = ObjectDetection.getClient(options);
+
+        CustomObjectDetectorOptions customObjectDetectorOptions =
+                new CustomObjectDetectorOptions.Builder(localModel)
+                        .setDetectorMode(CustomObjectDetectorOptions.STREAM_MODE)
+                        .enableClassification()
+                        .setClassificationConfidenceThreshold(0.5f)
+                        .setMaxPerObjectLabelCount(1)
+                        .build();
+
+        ObjectDetector objectDetector =
+                ObjectDetection.getClient(customObjectDetectorOptions);
 
         @Override
         public void analyze(ImageProxy imageProxy) {
             @SuppressLint("UnsafeExperimentalUsageError") Image mediaImage = imageProxy.getImage();
             if (mediaImage != null) {
-                InputImage image =
-                        InputImage.fromBitmap(toBitmap(mediaImage), imageProxy.getImageInfo().getRotationDegrees());
-                objectDetector.process(image)
-                        .addOnSuccessListener(
-                                new OnSuccessListener<List<DetectedObject>>() {
-                                    @Override
-                                    public void onSuccess(List<DetectedObject> detectedObjects) {
-                                        Toast.makeText(getApplicationContext(), "DETECTED", Toast.LENGTH_SHORT).show();
-                                        for (DetectedObject detectedObject : detectedObjects){
-                                                Log.d("TAG", String.valueOf(detectedObject.getLabels()));
-                                        }
-                                    }
-                                })
-                        .addOnFailureListener(
-                                new OnFailureListener() {
-                                    @Override
-                                    public void onFailure(@NonNull Exception e) {
-                                        Log.e("TAG", String.valueOf(e));
-                                        Toast.makeText(getApplicationContext(), "UNDETECTED", Toast.LENGTH_SHORT).show();
-                                    }
-                                });
+                InputImage image = InputImage.fromBitmap(toBitmap(mediaImage), imageProxy.getImageInfo().getRotationDegrees());
+                objectDetector
+                        .process(image)
+                        .addOnFailureListener(e -> {
+                            Toast.makeText(getApplicationContext(), "UNDETECTED", Toast.LENGTH_SHORT).show();
+                            Log.e("TAG", String.valueOf(e));
+                        })
+                        .addOnSuccessListener(results -> {
+                            for (DetectedObject detectedObject : results) {
+                                Log.d("TAG", String.valueOf(detectedObject.getBoundingBox()));
+                                for(DetectedObject.Label label : detectedObject.getLabels()) {
+                                    Log.d("TAG", label.getText());
+                                    Toast.makeText(getApplicationContext(), label.getText() + " - " + label.getConfidence(), Toast.LENGTH_SHORT).show();
+                                }
+                            }
+                        });
             }
             imageProxy.close();
             }
@@ -128,7 +130,7 @@ public class MainActivity extends AppCompatActivity {
 
         ImageAnalysis imageAnalysis = new ImageAnalysis.Builder().setTargetResolution(new Size(1280, 720)).
         setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST).build();
-        imageAnalysis.setAnalyzer(Executors.newSingleThreadExecutor(), new OD());
+        imageAnalysis.setAnalyzer(Executors.newSingleThreadExecutor(), new COD());
 
         CameraSelector cameraSelector = new CameraSelector.Builder().requireLensFacing(CameraSelector.LENS_FACING_BACK).build();
 
